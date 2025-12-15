@@ -4,33 +4,497 @@ MHF default launcher requires IE to login. IE sucks.
 
 This project reverse engineered the MHF launcher in order to make it possible to boot the game directly, without going through `mhf.exe` and `mhl.dll`.
 
-If you're wondering 'Why use this instead of the original launcher?', here are some of the issues that are are solved by using a custom launcher:
+## Why Use This?
 
-- Not being locked to IE.
-  - Should open a sea of possibilities on how to design the launcher.
-  - Won't take 10 seconds for each request.
-  - Game might boot under Linux/Steam deck when using Proton/Wine, since IE was the main reason those weren't even options.
-- Not being locked to the weird way MHF connects to the server.
-  - Allows launcher operations to be implemented using with HTTP(S), JSON, custom ports, etc.
-- Not being locked to the operations and data model the original launcher uses.
-  - Allows implementing new operations, such as adding separate buttons for 'Sign Up' and 'Login'.
-  - Allows storing and displaying extra information. For example, it would be *possible* to get character portraits on the launcher window.
-  - Removes the need to modify the launcher (since we're replacing it) and `mhfo-hd.dll` to remove GameGuard, since `mhfo-hd.dll` calls a function provided by the launcher to run GameGuard checks.
+If you're wondering 'Why use this instead of the original launcher?', here are some of the issues that are solved by using a custom launcher:
 
+### Freedom from Internet Explorer
+- **Not locked to IE** - Opens possibilities for modern launcher designs
+- **Fast operations** - No more 10-second waits for each request
+- **Linux/Steam Deck support** - Game can boot using Proton/Wine since IE was the main blocker
+
+### Modern Network Stack
+- **Flexible protocols** - Use HTTP(S), JSON, custom ports, etc.
+- **No legacy constraints** - Implement operations the way you want
+
+### Enhanced Features
+- **New operations** - Add separate buttons for 'Sign Up' and 'Login'
+- **Rich data** - Display extra information like character portraits in the launcher
+- **No GameGuard modifications** - Since we're replacing the launcher, no need to patch `mhfo-hd.dll` to remove GameGuard checks
+
+### Friends List Injection (NEW!)
+- **In-game friends list** - Automatically populated from server data
+- **HD and SD support** - Works seamlessly with both graphics modes
+- **Character-specific** - Shows only friends for the active character
+- **Zero configuration** - Automatically detects game version and injects at the correct memory addresses
+
+## Features
+
+### Core Functionality
+- ✅ Direct game boot without `mhf.exe` / `mhl.dll`
+- ✅ Support for both F5 and ZZ versions
+- ✅ Custom server connection handling
+- ✅ Character selection and management
+- ✅ Notice/announcement system
+- ✅ Mezfes event support
+
+### Friends List System
+- ✅ **Automatic injection** - Friends data injected directly into game memory
+- ✅ **Version detection** - Auto-detects HD/SD mode from `mhf.ini`
+- ✅ **Cross-platform** - Works on both graphics modes without configuration
+- ✅ **Thread-safe** - Non-blocking async injection during game startup
+- ✅ **Robust encoding** - Base32 ID conversion for proper friend identification
+
+## Technical Details
+
+### Friends List Implementation
+
+The friends list system uses memory injection to populate the in-game friends list at runtime:
+
+**Memory Offsets:**
+- HD Mode (`mhfo-hd.dll`): `0x0ED7D6C0`
+- SD Mode (`mhfo.dll`): `0x06142F20`
+
+**Data Structure:**
+```rust
+const FRIEND_TABLE_SIZE: usize = 0x1000; // 4KB table
+const FRIEND_ENTRY_SIZE: usize = 0x30; // 48 bytes per friend
+const MAX_FRIENDS: usize = 50; // Maximum supported friends
+```
+
+**Process:**
+
+Read `GRAPHICS_VER` from `mhf.ini` to determine HD/SD mode
+
+Wait for game DLL to load in memory
+
+Inject friends data at the correct offset
+
+Friends appear in-game without server-side modifications
 
 ## Usage
 
-If calling from another Rust project, make sure it itself is targeting `nightly-i686-pc-windows-msvc`, and just call `run` with the correct parameters. The idea at the moment is that most of these parameters will be returned from the [signv2server](https://github.com/ZeruLight/Erupe/tree/main/server/signv2server) endpoints, but this might change in the future.
+### From Rust Projects
 
-You can also use the [CLI interface](mhf-iel-cli/README.md) to run this project from any other program, and without the `i686` limitation.
+Make sure your project targets `nightly-i686-pc-windows-msvc`:
 
-Feel free to create a ticket if you need another way to integrate this lib into your app (`.dll`, bindings for static linking, etc).
+```rust
+use mhf_iel::{run_mhf, MhfConfig, MhfVersion, FriendData};
+
+let config = MhfConfig {
+version: MhfVersion::ZZ,
+char_id: 123,
+char_name: "Hunter".to_string(),
+friends: vec!
+F
+r
+i
+e
+n
+d
+D
+a
+t
+a
+i
+d
+:
+1
+,
+c
+i
+d
+:
+123
+,
+n
+a
+m
+e
+:
+"
+F
+r
+i
+e
+n
+d
+1
+"
+.
+t
+o
+_
+s
+t
+r
+i
+n
+g
+(
+)
+,
+,
+/
+/
+.
+.
+.
+m
+o
+r
+e
+f
+r
+i
+e
+n
+d
+s
+FriendDataid:1,cid:123,name:"Friend1".to_string(),,//...morefriends,
+// ... other config
+};
+
+run_mhf(config)?;
+```
+
+### From Other Languages
+
+Use the 
+C
+L
+I
+i
+n
+t
+e
+r
+f
+a
+c
+e
+CLIinterface(mhf-iel-cli/README.md) to run this project from any program without the `i686` limitation.
+
+### Integration Options
+
+Feel free to create a ticket if you need another way to integrate this lib into your app:
+- `.dll` exports
+- Static linking bindings
+- IPC/socket communication
+- Custom wrapper formats
 
 ## Compiling
 
-Before running `cargo build`, make sure you have the `nightly` toolchain and the `i686-pc-windows-msvc` target intalled:
+### Prerequisites
 
-```
+Install the nightly toolchain and i686 target:
+
+```bash
 rustup toolchain install nightly
 rustup target add i686-pc-windows-msvc
 ```
+
+### Build Commands
+
+```bash
+# Build the library
+cargo +nightly build --release --target i686-pc-windows-msvc
+
+# Build the CLI tool
+cargo +nightly build --release --target i686-pc-windows-msvc -p mhf-iel-cli
+```
+
+### For Linux Cross-Compilation
+
+```bash
+# Install MinGW toolchain
+sudo apt install mingw-w64
+
+# Add target
+rustup target add i686-pc-windows-gnu
+
+# Build
+cargo +nightly build --release --target i686-pc-windows-gnu -p mhf-iel-cli
+```
+
+## Configuration
+
+The launcher reads game settings from `mhf.ini` in the game directory:
+
+```ini
+V
+I
+D
+E
+O
+VIDEO
+GRAPHICS_VER=1 # 1 = HD, 0 = SD
+
+S
+C
+R
+E
+E
+N
+SCREEN
+FULLSCREEN_MODE=1
+WINDOW_RESOLUTION_W=1920
+WINDOW_RESOLUTION_H=1080
+
+# ... other settings
+```
+
+## Server Integration
+
+The launcher expects server responses with the following structure:
+
+```json
+{
+"currentTs": 1234567890,
+"expiryTs": 1234567890,
+"userTokenId": 0,
+"token": "abc123",
+"rights": 1292,
+"characters": 
+"
+i
+d
+"
+:
+1
+,
+"
+n
+a
+m
+e
+"
+:
+"
+H
+u
+n
+t
+e
+r
+"
+,
+"
+i
+s
+F
+e
+m
+a
+l
+e
+"
+:
+f
+a
+l
+s
+e
+,
+"
+w
+e
+a
+p
+o
+n
+"
+:
+0
+,
+"
+h
+r
+"
+:
+999
+,
+"
+g
+r
+"
+:
+100
+"id":1,"name":"Hunter","isFemale":false,"weapon":0,"hr":999,"gr":100,
+"friends": 
+"
+c
+i
+d
+"
+:
+1
+,
+"
+i
+d
+"
+:
+2
+,
+"
+n
+a
+m
+e
+"
+:
+"
+F
+r
+i
+e
+n
+d
+N
+a
+m
+e
+"
+"cid":1,"id":2,"name":"FriendName"
+}
+```
+
+## Testing
+
+```bash
+# Run tests
+cargo +nightly test --target i686-pc-windows-msvc
+
+# Run with logging
+RUST_LOG=debug cargo +nightly run --target i686-pc-windows-msvc
+```
+
+## Debugging
+
+The friends injection system provides detailed logging:
+
+```
+🎮 
+M
+a
+i
+n
+Main Total friends in config: 22
+🎯 
+M
+a
+i
+n
+Main Friends for char_id 3: 22
+
+🔍 
+F
+r
+i
+e
+n
+d
+s
+I
+n
+j
+e
+c
+t
+o
+r
+FriendsInjector Starting...
+DLL: mhfo-hd.dll
+Base offset: 0x0ED7D6C0
+Friends count: 22
+0
+0 ID:24 CID:3 Name:Wyxill
+1
+1 ID:12 CID:3 Name:Poe04
+...
+
+✅ 
+F
+r
+i
+e
+n
+d
+s
+I
+n
+j
+e
+c
+t
+o
+r
+FriendsInjector Module loaded at: 0x1ED7D6C0
+⏱️ 
+F
+r
+i
+e
+n
+d
+s
+I
+n
+j
+e
+c
+t
+o
+r
+FriendsInjector Waiting 2s for game init...
+✅ 
+F
+r
+i
+e
+n
+d
+s
+I
+n
+j
+e
+c
+t
+o
+r
+FriendsInjector Injection complete!
+```
+
+## Contributing
+
+Contributions are welcome! Areas for improvement:
+- Additional memory injection features
+- Enhanced error handling
+- Support for more game versions
+- Performance optimizations
+- Documentation improvements
+
+## License
+
+This project is provided as-is for Monster Hunter Frontier preservation efforts.
+
+## Acknowledgments
+
+- **Original reverse engineering work** - Foundation for this entire project
+- **MHF preservation community** - Keeping the game alive
+- **ButterClient project** - Inspiration for modern launcher features
+- **Server developers** - Making private servers possible
+
+## Project Status
+
+✅ **Stable** - Ready for production use
+- Core launcher functionality complete
+- Friends list injection working in HD and SD modes
+- Character selection and management functional
+- Server communication stable
+
+---
+
+*"Things are either done right, or not done at all!"*
