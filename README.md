@@ -85,73 +85,14 @@ let config = MhfConfig {
 version: MhfVersion::ZZ,
 char_id: 123,
 char_name: "Hunter".to_string(),
-friends: vec!
-F
-r
-i
-e
-n
-d
-D
-a
-t
-a
-i
-d
-:
-1
-,
-c
-i
-d
-:
-123
-,
-n
-a
-m
-e
-:
-"
-F
-r
-i
-e
-n
-d
-1
-"
-.
-t
-o
-_
-s
-t
-r
-i
-n
-g
-(
-)
-,
-,
-/
-/
-.
-.
-.
-m
-o
-r
-e
-f
-r
-i
-e
-n
-d
-s
-FriendDataid:1,cid:123,name:"Friend1".to_string(),,//...morefriends,
+friends: vec![
+FriendData {
+id: 1,
+cid: 123,
+name: "Friend1".to_string(),
+},
+// ... more friends
+],
 // ... other config
 };
 
@@ -160,20 +101,7 @@ run_mhf(config)?;
 
 ### From Other Languages
 
-Use the 
-C
-L
-I
-i
-n
-t
-e
-r
-f
-a
-c
-e
-CLIinterface(mhf-iel-cli/README.md) to run this project from any program without the `i686` limitation.
+se the [CLI interface](mhf-iel-cli/README.md) to run this project from any program without the `i686` limitation.
 
 ### Integration Options
 
@@ -222,26 +150,15 @@ cargo +nightly build --release --target i686-pc-windows-gnu -p mhf-iel-cli
 The launcher reads game settings from `mhf.ini` in the game directory:
 
 ```ini
-V
-I
-D
-E
-O
-VIDEO
+[VIDEO]
 GRAPHICS_VER=1 # 1 = HD, 0 = SD
 
-S
-C
-R
-E
-E
-N
-SCREEN
+[SCREEN]
 FULLSCREEN_MODE=1
 WINDOW_RESOLUTION_W=1920
 WINDOW_RESOLUTION_H=1080
 
-# ... other settings
+... other settings
 ```
 
 ## Server Integration
@@ -255,109 +172,24 @@ The launcher expects server responses with the following structure:
 "userTokenId": 0,
 "token": "abc123",
 "rights": 1292,
-"characters": 
-"
-i
-d
-"
-:
-1
-,
-"
-n
-a
-m
-e
-"
-:
-"
-H
-u
-n
-t
-e
-r
-"
-,
-"
-i
-s
-F
-e
-m
-a
-l
-e
-"
-:
-f
-a
-l
-s
-e
-,
-"
-w
-e
-a
-p
-o
-n
-"
-:
-0
-,
-"
-h
-r
-"
-:
-999
-,
-"
-g
-r
-"
-:
-100
-"id":1,"name":"Hunter","isFemale":false,"weapon":0,"hr":999,"gr":100,
-"friends": 
-"
-c
-i
-d
-"
-:
-1
-,
-"
-i
-d
-"
-:
-2
-,
-"
-n
-a
-m
-e
-"
-:
-"
-F
-r
-i
-e
-n
-d
-N
-a
-m
-e
-"
-"cid":1,"id":2,"name":"FriendName"
+"characters": [
+{
+"id": 1,
+"name": "Hunter",
+"isFemale": false,
+"weapon": 0,
+"hr": 999,
+"gr": 100
 }
+],
+"friends": [
+{
+"cid": 1,
+"id": 2,
+"name": "FriendName"
+  }
+    ]
+      }
 ```
 
 ## Testing
@@ -375,96 +207,20 @@ RUST_LOG=debug cargo +nightly run --target i686-pc-windows-msvc
 The friends injection system provides detailed logging:
 
 ```
-🎮 
-M
-a
-i
-n
-Main Total friends in config: 22
-🎯 
-M
-a
-i
-n
-Main Friends for char_id 3: 22
+🎮 [Main] Total friends in config: 22
+🎯 [Main] Friends for char_id 3: 22
 
-🔍 
-F
-r
-i
-e
-n
-d
-s
-I
-n
-j
-e
-c
-t
-o
-r
-FriendsInjector Starting...
+🔍 [Friends Injector] Starting...
 DLL: mhfo-hd.dll
 Base offset: 0x0ED7D6C0
 Friends count: 22
-0
-0 ID:24 CID:3 Name:Wyxill
-1
-1 ID:12 CID:3 Name:Poe04
+ID:24 CID:3 Name:Wyxill
+ID:12 CID:3 Name:Poe04​
 ...
 
-✅ 
-F
-r
-i
-e
-n
-d
-s
-I
-n
-j
-e
-c
-t
-o
-r
-FriendsInjector Module loaded at: 0x1ED7D6C0
-⏱️ 
-F
-r
-i
-e
-n
-d
-s
-I
-n
-j
-e
-c
-t
-o
-r
-FriendsInjector Waiting 2s for game init...
-✅ 
-F
-r
-i
-e
-n
-d
-s
-I
-n
-j
-e
-c
-t
-o
-r
-FriendsInjector Injection complete!
+✅ [Friends Injector] Module loaded at: 0x1ED7D6C0
+⏱️ [Friends Injector] Waiting 2s for game init...
+✅ [Friends Injector] Injection complete!
 ```
 
 ## Contributing
