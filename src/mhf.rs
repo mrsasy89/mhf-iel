@@ -392,66 +392,46 @@ unsafe fn inject_blob(buf: &mut [u8], id0_off: usize, friends: &[FriendData]) {
 }
 
 fn wait_and_inject(layout: FriendLayout, friends: Vec<FriendData>) {
-    // ⬇️ DEBUG PRINT #1
-    eprintln!("🔍 [Friends Injector] Starting...");
+    if friends.is_empty() {
+        return;
+    }
+
+    eprintln!("\n🔍 [Friends Injector] Starting...");
     eprintln!("   DLL: {}", layout.dll_name);
     eprintln!("   Base offset: 0x{:08X}", layout.base_off);
     eprintln!("   Friends count: {}", friends.len());
-    for (i, f) in friends.iter().enumerate().take(5) {
+
+    // Stampa primi 5 amici per debug
+    for (i, f) in friends.iter().take(5).enumerate() {
         eprintln!("   [{}] ID:{} CID:{} Name:{}", i, f.id, f.cid, f.name);
     }
 
-    thread::sleep(Duration::from_millis(8000));
-
-    let base = match resolve(layout) {
-        Some(p) => {
-            eprintln!("✅ [Friends Injector] Module loaded at: 0x{:X}", p);
-            p
+    // Attendi che il modulo sia caricato
+    let base = loop {
+        if let Some(addr) = resolve(layout) {
+            eprintln!("\n✅ [Friends Injector] Module loaded at: 0x{:08X}", addr);
+            break addr;
         }
-        None => {
-            eprintln!("❌ [Friends Injector] {} not loaded", layout.dll_name);
-            return;
-        }
+        thread::sleep(Duration::from_millis(100));
     };
 
-    let hdr = if layout.id0_off == 0x20 { 8 } else { 0 };
+    // Attendi un po' per sicurezza
+    eprintln!("⏱️  [Friends Injector] Waiting 2s for game init...");
+    thread::sleep(Duration::from_secs(2));
 
+    // Inietta i dati
     unsafe {
-        let mut tries = 0;
-        while {
-            let blk = std::slice::from_raw_parts((base + hdr) as *const u8, 0x20);
-            blk.chunks(4)
-            .take(8)
-            .any(|c| u32::from_le_bytes(c.try_into().unwrap()) == 0)
-            && {
-                tries += 1;
-                tries <= 2000
-            }
-        } {
-            thread::sleep(Duration::from_millis(10));
-        }
+        let mut buf = vec![0u8; FRIEND_TABLE_SIZE];
+        inject_blob(&mut buf, layout.id0_off, &friends);
 
-        if tries > 2000 {
-            eprintln!("⚠️ [Friends Injector] Timeout waiting for memory init");
-            return;
-        }
-
-        eprintln!("📝 [Friends Injector] Memory ready after {}ms", tries * 10);
-
-        let mut old = PAGE_PROTECTION_FLAGS(0);
-        let _ = VirtualProtect(base as _, FRIEND_TABLE_SIZE, PAGE_EXECUTE_READWRITE, &mut old);
-
-        inject_blob(
-            std::slice::from_raw_parts_mut(base as *mut u8, FRIEND_TABLE_SIZE),
-                    layout.id0_off,
-                    &friends,
-        );
-
-        let _ = VirtualProtect(base as _, FRIEND_TABLE_SIZE, old, &mut PAGE_PROTECTION_FLAGS(0));
-
-        eprintln!("✅ [Friends Injector] Injection complete!");
+        let dest = base as *mut u8;
+        std::ptr::copy_nonoverlapping(buf.as_ptr(), dest, buf.len());
     }
+
+    eprintln!("✅ [Friends Injector] Injection complete!\n");
 }
+
+
 
 fn init_global_alloc(global_alloc: HGLOBAL, mhf_config: &MhfConfig) {
     let global_ptr = unsafe { GlobalLock(global_alloc) };
