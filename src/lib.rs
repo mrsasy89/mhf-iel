@@ -1,17 +1,14 @@
-#![feature(generic_arg_infer)]
-#![feature(new_uninit)]
 mod error;
 mod mhf;
 mod utils;
 
 pub use error::Error;
 pub use error::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use std::path::PathBuf;
 
 use num_enum::TryFromPrimitive;
-use serde::Deserialize;
 
 #[repr(u8)]
 #[derive(
@@ -62,11 +59,19 @@ pub enum MezFesStall {
     StallMap = 10,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FriendData {
+    pub cid: u32,
+    pub id: u32,
+    pub name: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Notice {
     pub flags: u16,
     pub data: String,
 }
+
 
 #[derive(Debug, Deserialize, Default)]
 pub struct MhfConfig {
@@ -94,6 +99,10 @@ pub struct MhfConfig {
     pub mez_group_tickets: u32,
     pub mez_stalls: Vec<MezFesStall>,
     pub version: MhfVersion,
+
+    // test fix
+    #[serde(default)]  // ← Importante per retrocompatibilità
+    pub friends: Vec<FriendData>,
 
     // Optional
     pub mhf_folder: Option<PathBuf>,

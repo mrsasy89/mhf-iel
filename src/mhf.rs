@@ -1,7 +1,11 @@
+use std::thread;
+use std::time::Duration;
+
 use crate::utils::bufcopy;
 use crate::{utils, CliFlags, Error, MhfConfig, MhfVersion, Result};
+use crate::FriendData;
 
-use windows::core::s;
+use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{FreeLibrary, FARPROC, HANDLE, HGLOBAL, HMODULE};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
@@ -10,6 +14,7 @@ use windows::Win32::System::WindowsProgramming::{GetPrivateProfileIntA, GetPriva
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
 use windows::Win32::UI::TextServices::HKL;
 
+use windows::Win32::System::Memory::{VirtualProtect, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS};
 extern "C" fn mock_proc(_v: u32) -> u32 {
     // TODO: investigate individual procs
     0
@@ -279,6 +284,175 @@ struct GlobalData {
 // unsafe impl Sync for DataStatic {}
 // static DATA: SyncUnsafeCell<DataStatic> = SyncUnsafeCell::new(DataStatic(0 as *const Data));
 
+// ──────────────────────────────────────────────────────────
+// Friends injection system
+// ──────────────────────────────────────────────────────────
+
+#[derive(Copy, Clone)]
+struct FriendLayout {
+    dll_name: &'static str,
+    base_off: usize,
+    id0_off: usize,
+}
+
+const LAYOUT_HD: FriendLayout = FriendLayout {
+    dll_name: "mhfo-hd.dll",
+    base_off: 0x0ED7D6C0,
+    id0_off: 0x18,
+};
+
+const LAYOUT_SD: FriendLayout = FriendLayout {
+    dll_name: "mhfo.dll",
+    base_off: 0x06142F20,
+    id0_off: 0x18,
+};
+
+const FRIEND_TABLE_SIZE: usize = 0x1000;
+const FRIEND_ENTRY_SIZE: usize = 0x30;
+const MAX_FRIENDS: usize = 50;
+const LEAD_STEP: usize = 4;
+
+const BASE32_CHARS: &[u8; 32] = b"123456789ABCDEFGHJKLMNPQRTUVWXYZ";
+const BASE32_CAP: u32 = 32u32.pow(6);
+
+#[inline]
+fn make_ext_id(mut id: u32) -> String {
+    debug_assert!(id < BASE32_CAP, "ext_id overflow: {}", id);
+    let mut out = [b'1'; 6];
+    for byte in &mut out {
+        *byte = BASE32_CHARS[(id % 32) as usize];
+        id /= 32;
+        if id == 0 {
+            break;
+        }
+    }
+    String::from_utf8(out.to_vec()).unwrap()
+}
+
+fn resolve(l: FriendLayout) -> Option<usize> {
+    unsafe {
+        let c = std::ffi::CString::new(l.dll_name).unwrap();
+        GetModuleHandleA(PCSTR(c.as_ptr() as _))
+        .ok()
+        .map(|h| h.0 as usize + l.base_off)
+    }
+}
+
+#[inline]
+unsafe fn inject_blob(buf: &mut [u8], id0_off: usize, friends: &[FriendData]) {
+    let slots = friends
+    .len()
+    .min(MAX_FRIENDS)
+    .min(buf.len() / FRIEND_ENTRY_SIZE);
+
+    let header_sz = if id0_off == 0x20 { 0x08 } else { 0x00 };
+
+    for (i, f) in friends.iter().take(slots).enumerate() {
+        let base = i * FRIEND_ENTRY_SIZE;
+        let lead = header_sz + i * LEAD_STEP;
+        let id_off = header_sz + id0_off + i * LEAD_STEP;
+        let tz_end = base + id_off;
+        let mut cur = base + lead;
+
+        let clear_len = (id_off + 4) - lead;
+        std::ptr::write_bytes(buf.as_mut_ptr().add(base + lead), 0, clear_len);
+
+        if header_sz != 0 && i != 0 {
+            buf[base + 3] = 0x01;
+            buf[base + 4] = 0x01;
+        }
+
+        let ext = make_ext_id(f.id);
+        let n = ext.len().min(tz_end - cur);
+        bufcopy(&mut buf[cur..cur + n], ext.as_bytes());
+        cur += n;
+
+        if cur < tz_end {
+            buf[cur] = 0;
+            cur += 1;
+        }
+        if cur < tz_end {
+            buf[cur] = 0;
+            cur += 1;
+        }
+
+        if cur < tz_end {
+            let name = f.name.as_bytes();
+            let m = name.len().min(tz_end - cur - 1);
+            bufcopy(&mut buf[cur..cur + m], &name[..m]);
+            cur += m;
+            if cur < tz_end {
+                buf[cur] = 0;
+            }
+        }
+
+        let id_pos = base + id_off;
+        bufcopy(&mut buf[id_pos..id_pos + 4], &f.id.to_le_bytes());
+    }
+}
+
+fn wait_and_inject(layout: FriendLayout, friends: Vec<FriendData>) {
+    // ⬇️ DEBUG PRINT #1
+    eprintln!("🔍 [Friends Injector] Starting...");
+    eprintln!("   DLL: {}", layout.dll_name);
+    eprintln!("   Base offset: 0x{:08X}", layout.base_off);
+    eprintln!("   Friends count: {}", friends.len());
+    for (i, f) in friends.iter().enumerate().take(5) {
+        eprintln!("   [{}] ID:{} CID:{} Name:{}", i, f.id, f.cid, f.name);
+    }
+
+    thread::sleep(Duration::from_millis(8000));
+
+    let base = match resolve(layout) {
+        Some(p) => {
+            eprintln!("✅ [Friends Injector] Module loaded at: 0x{:X}", p);
+            p
+        }
+        None => {
+            eprintln!("❌ [Friends Injector] {} not loaded", layout.dll_name);
+            return;
+        }
+    };
+
+    let hdr = if layout.id0_off == 0x20 { 8 } else { 0 };
+
+    unsafe {
+        let mut tries = 0;
+        while {
+            let blk = std::slice::from_raw_parts((base + hdr) as *const u8, 0x20);
+            blk.chunks(4)
+            .take(8)
+            .any(|c| u32::from_le_bytes(c.try_into().unwrap()) == 0)
+            && {
+                tries += 1;
+                tries <= 2000
+            }
+        } {
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        if tries > 2000 {
+            eprintln!("⚠️ [Friends Injector] Timeout waiting for memory init");
+            return;
+        }
+
+        eprintln!("📝 [Friends Injector] Memory ready after {}ms", tries * 10);
+
+        let mut old = PAGE_PROTECTION_FLAGS(0);
+        let _ = VirtualProtect(base as _, FRIEND_TABLE_SIZE, PAGE_EXECUTE_READWRITE, &mut old);
+
+        inject_blob(
+            std::slice::from_raw_parts_mut(base as *mut u8, FRIEND_TABLE_SIZE),
+                    layout.id0_off,
+                    &friends,
+        );
+
+        let _ = VirtualProtect(base as _, FRIEND_TABLE_SIZE, old, &mut PAGE_PROTECTION_FLAGS(0));
+
+        eprintln!("✅ [Friends Injector] Injection complete!");
+    }
+}
+
 fn init_global_alloc(global_alloc: HGLOBAL, mhf_config: &MhfConfig) {
     let global_ptr = unsafe { GlobalLock(global_alloc) };
     unsafe { global_ptr.write_bytes(0, 0x8ae0) };
@@ -515,6 +689,9 @@ pub fn run_mhf(config: crate::MhfConfig) -> Result<isize> {
         CmdData::default()
     };
     let ini_file = s!("./mhf.ini");
+    let graphics_ver_for_layout = unsafe {
+        GetPrivateProfileIntA(s!("VIDEO"), s!("GRAPHICS_VER"), 1, ini_file)
+    };
 
     let (data_ptr, proc, mhfo_module) = match config.version {
         MhfVersion::F5 => {
@@ -549,8 +726,10 @@ pub fn run_mhf(config: crate::MhfConfig) -> Result<isize> {
         }
         MhfVersion::ZZ => {
             let mut data = unsafe { Box::<DataZZ>::new_zeroed().assume_init() };
+
             let graphics_ver =
-                unsafe { GetPrivateProfileIntA(s!("VIDEO"), s!("GRAPHICS_VER"), 1, ini_file) };
+            unsafe { GetPrivateProfileIntA(s!("VIDEO"), s!("GRAPHICS_VER"), 1, ini_file) };
+
             let dll_name = if graphics_ver == 1 {
                 s!("mhfo-hd.dll")
             } else {
@@ -595,7 +774,43 @@ pub fn run_mhf(config: crate::MhfConfig) -> Result<isize> {
 
     let proc: unsafe extern "C" fn(*const usize) -> isize = unsafe { std::mem::transmute(proc) };
 
-    let result = unsafe { proc(data_ptr) };
+    // ⬇️ AGGIUNGI GESTIONE FRIENDS
+    let friends_copy: Vec<_> = config
+    .friends
+    .iter()
+    .cloned()
+    .filter(|f| f.cid == config.char_id)
+    .collect();
+
+    // Debug print totale friends
+    eprintln!("🎮 [Main] Total friends in config: {}", config.friends.len());
+    eprintln!("🎯 [Main] Friends for char_id {}: {}", config.char_id, friends_copy.len());
+
+    // Determina layout (HD o SD)
+    let layout = match config.version {
+        MhfVersion::F5 => LAYOUT_SD,
+        MhfVersion::ZZ => {
+            // Usa la variabile già letta sopra
+            if graphics_ver_for_layout == 1 { LAYOUT_HD } else { LAYOUT_SD }
+        }
+    };
+
+    // Spawn threads
+    let proc_addr = proc as usize;
+    let data_ptr_val = data_ptr as usize;
+
+    let game_handle = thread::spawn(move || {
+        let entry: unsafe extern "C" fn(*const usize) -> isize =
+        unsafe { std::mem::transmute(proc_addr) };
+        unsafe { entry(data_ptr_val as *const usize) }
+    });
+
+    let inj_handle = thread::spawn(move || {
+        wait_and_inject(layout, friends_copy);
+    });
+
+    let result = game_handle.join().unwrap();
+    let _ = inj_handle.join();
 
     unsafe { FreeLibrary(mhfo_module) }.or(Err(Error::Dll))?;
     utils::release_global_alloc(global_alloc)?;
