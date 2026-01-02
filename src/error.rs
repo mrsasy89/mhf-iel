@@ -3,6 +3,7 @@ use std::fmt::Display;
 #[derive(Debug)]
 pub enum Error {
     GamePath,
+    Module,
     Mutex,
     GlobalAlloc,
     Dll,
@@ -14,6 +15,7 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::GamePath => write!(f, "unable to find path to game"),
+            Self::Module => write!(f, "unable to get module handle"),
             Self::Mutex => write!(f, "unable to create or free game mutexes"),
             Self::GlobalAlloc => write!(f, "unable to create or free game global alloc"),
             Self::Dll => write!(f, "unable to load or free mhfo dll"),

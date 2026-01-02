@@ -4,25 +4,24 @@ mod utils;
 
 pub use error::Error;
 pub use error::Result;
+
 use serde::{Deserialize, Serialize};
-
 use std::path::PathBuf;
-
 use num_enum::TryFromPrimitive;
 
 #[repr(u8)]
 #[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    TryFromPrimitive,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
+Debug,
+Default,
+Clone,
+Copy,
+Serialize,
+Deserialize,
+TryFromPrimitive,
+PartialEq,
+Eq,
+PartialOrd,
+Ord,
 )]
 pub enum MhfVersion {
     #[default]
@@ -59,7 +58,8 @@ pub enum MezFesStall {
     StallMap = 10,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct FriendData {
     pub cid: u32,
     pub id: u32,
@@ -71,7 +71,6 @@ pub struct Notice {
     pub flags: u16,
     pub data: String,
 }
-
 
 #[derive(Debug, Deserialize, Default)]
 pub struct MhfConfig {
@@ -100,18 +99,22 @@ pub struct MhfConfig {
     pub mez_stalls: Vec<MezFesStall>,
     pub version: MhfVersion,
 
-    // test fix
-    #[serde(default)]  // ← Importante per retrocompatibilità
+    // Friend injection support
+    #[serde(default)]
     pub friends: Vec<FriendData>,
+
+    // Font override (LilButter's modification)
+    #[serde(default)]
+    pub font_name: Option<String>,
 
     // Optional
     pub mhf_folder: Option<PathBuf>,
     pub mhf_flags: Option<Vec<CliFlags>>,
 }
 
-pub fn run(config: MhfConfig) -> Result<isize> {
+pub fn run(config: MhfConfig) -> Result<()> {
     if config.user_token.len() != 16 {
         return Err(Error::TokenLength);
     }
-    mhf::run_mhf(config)
+    mhf::run_mhf(config).map(|_| ())
 }
