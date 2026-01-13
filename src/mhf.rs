@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use std::os::windows::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
 
 use crate::utils::bufcopy;
 use crate::{utils, CliFlags, Error, MhfConfig, MhfVersion, Result};
@@ -45,7 +44,6 @@ const INI_BASENAME: &[u8] = b"mhf.ini\0";
 // ============================================
 
 /// Resolve path to the game's MS Gothic font file
-#[cfg(target_os = "windows")]
 fn resolve_game_font_path() -> Option<PathBuf> {
     let mut candidates = Vec::new();
 
@@ -67,7 +65,6 @@ fn resolve_game_font_path() -> Option<PathBuf> {
 }
 
 /// Register the game font with Windows (Wine-compatible)
-#[cfg(target_os = "windows")]
 fn register_game_font() {
     let Some(path) = resolve_game_font_path() else {
         eprintln!("ℹ️  [Font] MS Gothic.ttf not found in backend/Font/ or Font/ directories");
@@ -814,7 +811,6 @@ pub fn run_mhf(config: crate::MhfConfig) -> Result<isize> {
     //---------------------------------------------------------------------
     // 0. Register game font (LilButter's modification)
     //---------------------------------------------------------------------
-#[cfg(target_os = "windows")]
     register_game_font();
 
     //---------------------------------------------------------------------
